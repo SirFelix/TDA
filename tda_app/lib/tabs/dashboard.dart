@@ -1,25 +1,28 @@
 import 'dart:math' as math;
 import 'dart:ui';
+// ignore: depend_on_referenced_packages
+import 'package:../tda_app/app_state.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:tda_app/graphs/daq_chart_widget.dart';
 import 'package:tda_app/widgets/sensor_metric_card.dart';
 import 'package:tda_app/widgets/data_table.dart';
 // import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
-class MySensorPoint {
-  final DateTime timestamp;
-  final double raw;
-  final double filtered;
+// class TractorRawFiltered {
+//   final DateTime timestamp;
+//   final double raw;
+//   final double filtered;
 
-  MySensorPoint(this.timestamp, this.raw, this.filtered);
-}
+//   TractorRawFiltered(this.timestamp, this.raw, this.filtered);
+// }
 
-class TractorSpeed {
-  final DateTime timestamp;
-  final double speed;
+// class TractorSpeed {
+//   final DateTime timestamp;
+//   final double speed;
 
-  TractorSpeed(this.timestamp, this.speed);
-}
+//   TractorSpeed(this.timestamp, this.speed);
+// }
 
 
 class DashboardTab extends StatelessWidget {
@@ -87,7 +90,7 @@ class DashboardTab extends StatelessWidget {
                  
 
                   
-                  DaqChartWidget<MySensorPoint>(
+                  DaqChartWidget<TractorRawFiltered>(
                     title: 'Sensor Data (Raw vs Filtered)',
                     height: 400,
                     backgroundColor: Colors.white60,
@@ -95,20 +98,23 @@ class DashboardTab extends StatelessWidget {
                     maxDataPoints: 700,
                     animationDuration: 0,
                     isVisible: true,
+                    // dataSource: context.watch<AppState>().tractorData,
+
                     dataGenerator: () {
                       final now = DateTime.now();
                       final raw = (now.millisecond % 100).toDouble();
                       final filtered = raw * 0.4 + 10; // Example filtering
-                      return MySensorPoint(now, raw, filtered);
+                      return TractorRawFiltered(timestamp: now, raw: raw, filtered: filtered);
                     },
+
                     seriesConfigs: [
-                      ChartSeriesConfig<MySensorPoint>(
+                      ChartSeriesConfig<TractorRawFiltered>(
                         name: 'Raw',
                         color: Colors.red,
                         xValueMapper: (point, _) => point.timestamp,
                         yValueMapper: (point, _) => point.raw,
                       ),
-                      ChartSeriesConfig<MySensorPoint>(
+                      ChartSeriesConfig<TractorRawFiltered>(
                         name: 'Filtered',
                         color: Colors.blue,
                         xValueMapper: (point, _) => point.timestamp,
@@ -129,11 +135,14 @@ class DashboardTab extends StatelessWidget {
                     maxDataPoints: 700,
                     animationDuration: 0,
                     isVisible: true,
+                    // dataSource: context.watch<AppState>().tractorSpeedData,
+
                     dataGenerator: () {
                       final now = DateTime.now();
                       final speed = (math.Random().nextInt(30)).toDouble();
-                      return TractorSpeed(now, speed);
+                      return TractorSpeed(timestamp: now, speed: speed);
                     },
+                    
                     seriesConfigs: [
                       ChartSeriesConfig<TractorSpeed>(
                         name: 'Speed',

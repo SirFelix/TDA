@@ -1,7 +1,39 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:tda_app/tabs/dashboard.dart';
+// import 'package:tda_app/tabs/dashboard.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+
+
+
+
+
+
+// Created to add some data
+class EthDeviceInfo {
+  final String name;
+  final String ip;
+
+  EthDeviceInfo({required this.name, required this.ip});
+}
+
+class TractorRawFiltered {
+
+  final DateTime timestamp;
+  final double raw;
+  final double filtered;
+
+  TractorRawFiltered({required this.timestamp, required this.raw, required this.filtered});
+}
+class TractorSpeed {
+
+  final DateTime timestamp;
+  final double speed;
+
+  TractorSpeed({required this.timestamp, required this.speed});
+}
+
+
+
 
 class AppState extends ChangeNotifier {
   static final AppState _instance = AppState._internal();
@@ -13,10 +45,17 @@ class AppState extends ChangeNotifier {
   );
 
   // Realtime data
-  List<MySensorPoint> sensorData = [];
-  List<TractorData> tractorSpeedData = [];
+  bool isConnected = false;
+  bool isDAQRunning = false;
+  bool isScanning = false;
+  bool autoScanEnabled = true;
+
+
+  List<TractorRawFiltered> tractorData = [];
+  List<TractorSpeed> tractorSpeedData = [];
   Map<String, double> latestMetrics = {};
-  List<DeviceInfo> connectedDevices = [];
+  List<EthDeviceInfo> connectedDevices = [];
+
 
   void init() {
     channel.stream.listen((message) {
@@ -28,19 +67,19 @@ class AppState extends ChangeNotifier {
   void _handleMessage(dynamic data) {
     // Example logic
     if (data['type'] == 'sensor') {
-      final point = MySensorPoint(
-        DateTime.parse(data['timestamp']),
-        data['raw'],
-        data['filtered'],
+      final point = TractorRawFiltered(
+        timestamp: DateTime.parse(data['timestamp']),
+        raw: data['raw'],
+        filtered: data['filtered'],
       );
-      sensorData.add(point);
-      if (sensorData.length > 100) sensorData.removeAt(0);
+      tractorData.add(point);
+      if (tractorData.length > 100) tractorData.removeAt(0);
     }
 
     if (data['type'] == 'tractor') {
-      final speed = TractorData(
-        DateTime.parse(data['timestamp']),
-        data['speed'],
+      final speed = TractorSpeed(
+        timestamp: DateTime.parse(data['timestamp']),
+        speed: data['speed'],
       );
       tractorSpeedData.add(speed);
       if (tractorSpeedData.length > 100) tractorSpeedData.removeAt(0);
@@ -55,17 +94,46 @@ class AppState extends ChangeNotifier {
   }
 
   // Sending commands
-  void sendCommand(String command, [Map<String, dynamic>? payload]) {
-    final msg = {'command': command, 'payload': payload ?? {}};
-    channel.sink.add(jsonEncode(msg));
+  void sendCommand(Map<String, dynamic> message) {
+    // final msg = {'command': command, 'payload': payload ?? {}};
+    channel.sink.add(jsonEncode(message));
+  }
+
+  void connect() {
+    sendCommand({'command': 'connect'});
+    isConnected = true;
+    notifyListeners();
+  }
+
+  void disconnect() {
+    sendCommand({'command': 'disconnect'});
+    isConnected = false;
+    notifyListeners();
+  }
+
+  void startDAQ() {
+    sendCommand({'command': 'start'});
+    isDAQRunning = true;
+    notifyListeners();
+  }
+
+  void stopDAQ() {
+    sendCommand({'command': 'stop'});
+    isDAQRunning = false;
+    notifyListeners();
+  }
+
+  void toggleAutoScan(bool enabled) {
+    autoScanEnabled = enabled;
+    sendCommand({'command': 'setAutoScan', 'enabled': enabled});
+    notifyListeners();
+  }
+
+  void scanDevices() {
+    isScanning = true;
+    sendCommand({'command': 'scan'});
+    notifyListeners();
   }
 }
 
 
-// Created to add some data
-class DeviceInfo {
-}
-
-class TractorData {
-  TractorData(DateTime parse, data);
-}

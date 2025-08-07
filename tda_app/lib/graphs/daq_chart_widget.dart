@@ -26,7 +26,8 @@ class DaqChartWidget<T> extends StatefulWidget {
   final int refreshRateMs;
   final int maxDataPoints;
   final double animationDuration;
-  final T Function() dataGenerator;
+  final T Function()? dataGenerator;
+  final List<T>? dataSource;
   final List<ChartSeriesConfig<T>> seriesConfigs;
   final String yAxisTitle;
   final String xAxisTitle;
@@ -39,7 +40,8 @@ class DaqChartWidget<T> extends StatefulWidget {
     this.refreshRateMs = 500,
     this.maxDataPoints = 200,
     this.animationDuration = 0,
-    required this.dataGenerator,
+    this.dataGenerator,
+    this.dataSource,
     required this.seriesConfigs,
     this.yAxisTitle = 'Value',
     this.xAxisTitle = 'Time',
@@ -60,17 +62,39 @@ class _DaqChartWidgetState<T> extends State<DaqChartWidget<T>> {
   @override
   void initState() {
     super.initState();
-    _chartData = [widget.dataGenerator()];
-    _seriesControllers.length = widget.seriesConfigs.length;
 
-    _timer = Timer.periodic(
-      Duration(milliseconds: widget.refreshRateMs),
-      _updateData,
-    );
+    if (widget.dataSource != null) {
+      _chartData = widget.dataSource!;
+    }
+    else if (widget.dataGenerator != null){
+      _chartData = [widget.dataGenerator!()];
+      _seriesControllers.length = widget.seriesConfigs.length;
+
+      _timer = Timer.periodic(
+        Duration(milliseconds: widget.refreshRateMs),
+        _updateData,
+      );
+    }
+    else{
+      _chartData = [];
+    }
+
+  }
+
+  @override
+  void didUpdateWidget(covariant DaqChartWidget<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.dataGenerator == null && widget.dataSource != null) {
+      setState(() {
+        _chartData = List.from(widget.dataSource!);
+      });
+    }
   }
 
   void _updateData(Timer timer) {
-    final newData = widget.dataGenerator();
+    if (widget.dataGenerator == null) return;
+    
+    final newData = widget.dataGenerator!();
 
     setState(() {
       _chartData.add(newData);
