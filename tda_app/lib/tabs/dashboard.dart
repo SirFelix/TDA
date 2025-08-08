@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tda_app/graphs/daq_chart_widget.dart';
 import 'package:tda_app/widgets/sensor_metric_card.dart';
+import 'package:tda_app/graphs/generic_chart_widget.dart';
 import 'package:tda_app/widgets/data_table.dart';
 // import 'package:syncfusion_flutter_datagrid/datagrid.dart';
 
@@ -66,18 +67,14 @@ class DashboardTab extends StatelessWidget {
                         children: const [
                           SensorMetricCard(title: 'Current Time', unit: '', value: '12:41:02'),
                           VerticalDivider(color: Colors.black, thickness: 20,),
-                          SensorMetricCard(title: 'DAQ Pressure', unit: 'PSI', value: '2500'),
-                          SensorMetricCard(title: 'Pressure', unit: 'hPa', value: '1000'),
-                          SensorMetricCard(title: 'Temp', unit: '°C', value: '10'),
-                          SensorMetricCard(title: 'Rain', unit: 'mm', value: '0'),
-                          SensorMetricCard(title: 'Wind', unit: 'm/s', value: '43'),
-                          SensorMetricCard(title: 'Speed', unit: 'm/s', value: '12.5'),
-                          SensorMetricCard(title: 'Direction', unit: '°', value: '180'),
-                          SensorMetricCard(title: 'Elevation', unit: 'm', value: '5,304'),
-                          SensorMetricCard(title: 'Elevation', unit: 'm', value: '5,304'),
-                          SensorMetricCard(title: 'Elevation', unit: 'm', value: '5,304'),
-                          SensorMetricCard(title: 'Elevation', unit: 'm', value: '5,304'),
-                          SensorMetricCard(title: 'Elevation', unit: 'm', value: '5,304'),
+                          SensorMetricCard(title: 'DAQ Pressure', unit: 'PSI', value: '6,548'),
+                          SensorMetricCard(title: 'CT Pressure', unit: 'PSI', value: '6,492'),
+                          SensorMetricCard(title: 'WH Pressure', unit: 'PSI', value: '1,735'),
+                          SensorMetricCard(title: 'CT Depth', unit: 'FT', value: '18,743.4'),
+                          SensorMetricCard(title: 'CT Weight', unit: 'LBS', value: '15,461'),
+                          SensorMetricCard(title: 'CT Speed', unit: 'FPM', value: '14.5'),
+                          SensorMetricCard(title: 'CT FL Rate', unit: 'BPM', value: '5.72'),
+                          SensorMetricCard(title: 'N2 FL Rate', unit: 'SCF', value: '0.00'),
                           // ...
                         ],
                       ),
@@ -94,7 +91,7 @@ class DashboardTab extends StatelessWidget {
                     title: 'Sensor Data (Raw vs Filtered)',
                     height: 400,
                     backgroundColor: Colors.white60,
-                    refreshRateMs: 1000,
+                    refreshRateMs: 500,
                     maxDataPoints: 700,
                     animationDuration: 0,
                     isVisible: true,
@@ -123,6 +120,20 @@ class DashboardTab extends StatelessWidget {
                     ],
                   ),
 
+                  // GenericChartWidget<TractorRawFiltered>(
+                  //   isConnected: context.watch<AppState>().isDAQConnected,
+                  //   title: 'DAQ Chart',
+                  //   icon: Icons.stacked_line_chart,
+                  //   data: context.watch<AppState>().tractorData,
+                  //   // xValueMapper: (p) => p.timestamp,
+                  //   // yValueMapper: (p) => p.value,
+                  //   xValueMapper: (point, _) => point.timestamp,
+                  //   yValueMapper: (point, _) => point.raw,
+                  //   placeholderTitle: 'Connect to an NI Module to view live data',
+                  //   placeholderHint: 'Select a Sampling Rate (Hz) then click Start DAQ',
+                  // ),
+
+
 
                   const SizedBox(height: 4),
 
@@ -131,7 +142,7 @@ class DashboardTab extends StatelessWidget {
                     title: 'Tractor Speed',
                     height: 200,
                     backgroundColor: Colors.white60,
-                    refreshRateMs: 1000,
+                    refreshRateMs: 500,
                     maxDataPoints: 700,
                     animationDuration: 0,
                     isVisible: true,

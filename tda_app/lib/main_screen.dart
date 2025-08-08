@@ -63,13 +63,15 @@ void initState() {
         key: _sliderDrawerKey,
         appBar: SliderAppBar(
           config: SliderAppBarConfig(
+            backgroundColor: const Color.fromARGB(255, 40, 23, 172),
             title: AnimatedPadding(
               curve: Curves.decelerate,
               padding: EdgeInsets.only(right: _isDrawerOpen ? 300 : 0),
               duration: Duration(milliseconds: _isDrawerOpen ? 400 : 600),
-              child: Text('Slider Drawer AppBar',
+              child: Text('Tractor Data Analyzer',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
+                  color: Color.fromARGB(230, 255, 255, 255),
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
                 ),

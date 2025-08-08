@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_libserialport/flutter_libserialport.dart';
 // import 'package:tda_app/tabs/dashboard.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -45,16 +46,32 @@ class AppState extends ChangeNotifier {
   );
 
   // Realtime data
-  bool isConnected = false;
+  bool isDAQConnected = false;
   bool isDAQRunning = false;
-  bool isScanning = false;
-  bool autoScanEnabled = true;
+  bool isDAQScanning = false;
+  bool autoDAQScanEnabled = true;
 
+  bool isRIGConnected = false;
+  bool isRIGRunning = false;
+  bool isRIGScanning = false;
+  bool autoRIGScanEnabled = true;
+
+  String? setEthernetIp;
+  String? setSerialPort;
+  int setSerialBaudRate = 57600;
+  SerialPort? _port;
 
   List<TractorRawFiltered> tractorData = [];
   List<TractorSpeed> tractorSpeedData = [];
   Map<String, double> latestMetrics = {};
   List<EthDeviceInfo> connectedDevices = [];
+
+  // Replaces manual 'availablePorts' list with dynamic port recognition
+  List<String> get availablePorts => SerialPort.availablePorts;
+
+  final List<int> availableBaudRates = [
+    9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
+  ];
 
 
   void init() {
@@ -99,15 +116,15 @@ class AppState extends ChangeNotifier {
     channel.sink.add(jsonEncode(message));
   }
 
-  void connect() {
+  void connectDAQ() {
     sendCommand({'command': 'connect'});
-    isConnected = true;
+    isDAQConnected = true;
     notifyListeners();
   }
 
-  void disconnect() {
+  void disconnectDAQ() {
     sendCommand({'command': 'disconnect'});
-    isConnected = false;
+    isDAQConnected = false;
     notifyListeners();
   }
 
@@ -123,15 +140,29 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleAutoScan(bool enabled) {
-    autoScanEnabled = enabled;
+  void toggleAutoDAQScan(bool enabled) {
+    autoDAQScanEnabled = enabled;
     sendCommand({'command': 'setAutoScan', 'enabled': enabled});
     notifyListeners();
   }
 
-  void scanDevices() {
-    isScanning = true;
+  void scanDevicesDAQ() {
+    isDAQScanning = true;
     sendCommand({'command': 'scan'});
+    notifyListeners();
+  }
+  void setSelectedEthernetIp(String ip) {
+    setEthernetIp = ip;
+    notifyListeners();
+  }
+
+  void setSelectedSerialPort(String? port) {
+    setSerialPort = port;
+    notifyListeners();
+  }
+  
+  void setSelectedBaudRate(int baudRate) {
+    setSerialBaudRate = baudRate;
     notifyListeners();
   }
 }
