@@ -2,133 +2,147 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tda_app/app_state.dart';
 
-class DaqDropdown extends StatefulWidget {
+class DaqDropdown extends StatelessWidget {
   const DaqDropdown({super.key});
-
-  @override
-  State<DaqDropdown> createState() => _DaqDropdownState();
-}
-
-class _DaqDropdownState extends State<DaqDropdown> {
-  String selectedValue = "Serial";
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppState>(
-      builder: (context, appState, child) {
+      builder: (context, appState, _) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Radio<String>(
-                  value: "Ethernet",
-                  groupValue: selectedValue,
-                  onChanged: (value) {
-                    setState(() {
-                      selectedValue = value!;
-                    });
-                  },
-                ),
-                Container(
-                  // color: Colors.white,
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                  ),
-                  child: Text("Ethernet"),
-                ),
-                SizedBox(width: 4),
-                Radio<String>(
-                  value: "Serial",
-                  groupValue: selectedValue,
-                  onChanged: (value) {
-                    setState(() {
-                      selectedValue = value!;
-                    });
-                  },
-                ),
-                Container(
-                  // color: Colors.white,
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                  ),
-                  child: Text("Serial"),
-                ),
-              ],
-            ),
-             const SizedBox(height: 16),
 
-            if (selectedValue == "Ethernet") ...[
-              // Example Ethernet-specific dropdown
-              DropdownButton<String>(
-                value: appState.setEthernetIp ?? '192.168.1.1',
-                items: ['192.168.1.1', '192.168.1.2'].map((ip) {
-                  return DropdownMenuItem(value: ip, child: Text(ip));
-                }).toList(),
-                onChanged: (value) {
-                  appState.setSelectedEthernetIp(value!);
-                },
-              ),
-            ] else if (selectedValue == "Serial") ...[
-              // Example Serial-specific dropdown
+            const SizedBox(height: 16),
+            // Mode selector using SegmentedButton
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: "Serial", label: Text("USB")),
+                ButtonSegment(value: "Ethernet", label: Text("Ethernet")),
+              ],
+              selected: {appState.daqMode},
+              onSelectionChanged: (newSelection) {
+                if (newSelection.isNotEmpty) {
+                  appState.setDaqMode(newSelection.first);
+                }
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            // Mode-specific controls
+            if (appState.daqMode == "Ethernet") ...[
               DropdownMenu<String>(
-                width: 250,
-                initialSelection: appState.setSerialPort,
-                hintText: 'Select Port',
-                onSelected: (String? value) {
-                  appState.setSelectedSerialPort(value);
+                width: 290,
+                initialSelection: appState.setNIModule,
+                hintText: 'Select Channel Address',
+                onSelected: (value) {
+                  if (value != null) appState.setSelectedNIModuleChannel(value);
                 },
-                dropdownMenuEntries: appState.availablePorts
-                    .map<DropdownMenuEntry<String>>((String port) {
-                  return DropdownMenuEntry<String>(
-                    value: port,
-                    label: port,
-                  );
-                }).toList(),
+                dropdownMenuEntries: [
+                  'cDAQ9181-2185DAEMod1/ai0',
+                  'cDAQ9181-2185DAEMod1/ai1',
+                ].map((ch) => DropdownMenuEntry<String>(
+                      value: ch,
+                      label: ch,
+                    ))
+                  .toList(),
               ),
               const SizedBox(height: 8),
               DropdownMenu<int>(
-                width: 250,
+                width: 290,
+                initialSelection: appState.setNIModuleSPS,
+                hintText: 'Frame Rate',
+                onSelected: (value) {
+                  if (value != null) appState.setNIModuleSPS = value;
+                },
+                dropdownMenuEntries: [1, 2, 5, 10, 20, 30]
+                    .map((fps) => DropdownMenuEntry<int>(
+                          value: fps,
+                          label: '$fps',
+                        ))
+                    .toList(),
+              ),
+            ] else if (appState.daqMode == "Serial") ...[
+              DropdownMenu<String>(
+                width: 290,
+                initialSelection: appState.setSerialPort,
+                hintText: 'Select Port',
+                onSelected: (value) {
+                  if (value != null) appState.setSelectedSerialPort(value);
+                },
+                dropdownMenuEntries: appState.availablePorts
+                    .map((port) => DropdownMenuEntry<String>(
+                          value: port,
+                          label: port,
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 8),
+              DropdownMenu<int>(
+                width: 290,
                 initialSelection: appState.setSerialBaudRate,
                 hintText: 'Select Baud Rate',
-                onSelected: (int? value) {
-                  appState.setSelectedBaudRate(value!);
+                onSelected: (value) {
+                  if (value != null) appState.setSelectedBaudRate(value);
                 },
                 dropdownMenuEntries: appState.availableBaudRates
-                    .map<DropdownMenuEntry<int>>((int baudRate) {
-                  return DropdownMenuEntry<int>(
-                    value: baudRate,
-                    label: baudRate.toString(),
-                  );
-                }).toList(),
+                    .map((baud) => DropdownMenuEntry<int>(
+                          value: baud,
+                          label: baud.toString(),
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 8),
+              DropdownMenu<int>(
+                width: 290,
+                initialSelection: appState.setSerialFPS,
+                hintText: 'Frame Rate',
+                onSelected: (value) {
+                  if (value != null) appState.setSerialFPS = value;
+                },
+                dropdownMenuEntries: [1, 2, 5, 10, 20, 30]
+                    .map((fps) => DropdownMenuEntry<int>(
+                          value: fps,
+                          label: '$fps',
+                        ))
+                    .toList(),
               ),
             ],
 
             const SizedBox(height: 8),
 
+            Divider(
+              thickness: 2,),
+
+            const SizedBox(height: 8),
+
+            // Start / Stop DAQ button
             ElevatedButton.icon(
-              onPressed: appState.setSerialPort != null
-                  ? appState.connectDAQ
-                  : null,
+              onPressed: () {
+                if (appState.isDAQRunning) {
+                  appState.stopDAQ();
+                } else {
+                  appState.startDAQ();
+                }
+              },
               icon: Icon(
-                appState.isDAQConnected
-                  ? Icons.stop_circle_outlined
-                  : Icons.play_circle_outlined,
+                appState.isDAQRunning
+                    ? Icons.stop_circle_outlined
+                    : Icons.play_circle_outlined,
                 size: 23,
+                color: Colors.white,
               ),
               label: Text(
-                appState.isDAQConnected ? 'Disconnect' : 'Connect',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                appState.isDAQRunning ? 'Stop DAQ' : 'Start DAQ',
+                style: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: appState.isDAQConnected
-                  ? Colors.red
-                  : Colors.green,
+                backgroundColor:
+                    appState.isDAQRunning ? Colors.red : Colors.green,
               ),
             ),
-
-            Padding(padding: const EdgeInsets.only(bottom: 8)),
           ],
         );
       },

@@ -63,7 +63,7 @@ void initState() {
         key: _sliderDrawerKey,
         appBar: SliderAppBar(
           config: SliderAppBarConfig(
-            backgroundColor: const Color.fromARGB(255, 40, 23, 172),
+            backgroundColor: Colors.blue[700],
             title: AnimatedPadding(
               curve: Curves.decelerate,
               padding: EdgeInsets.only(right: _isDrawerOpen ? 300 : 0),
@@ -79,7 +79,7 @@ void initState() {
             ),
           ),
         ),
-        sliderOpenSize: 300,
+        sliderOpenSize: 320,
         slider: ControlPanelAccordion(),
         child: TabController(isDrawerOpen: _isDrawerOpen,),
 

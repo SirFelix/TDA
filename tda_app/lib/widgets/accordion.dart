@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:accordion/accordion.dart';
 import 'package:tda_app/dropdowns/daq_dropdown.dart';
+import 'package:tda_app/dropdowns/rig_dropdown.dart';
+import 'package:tda_app/dropdowns/ws_dropdown.dart';
 
 class ControlPanelAccordion extends StatelessWidget {
   const ControlPanelAccordion({super.key});
@@ -12,12 +14,13 @@ class ControlPanelAccordion extends StatelessWidget {
   @override
   Widget build(BuildContext context) { // Changed build method return type to Widget
     return Container(
-      color: const Color.fromARGB(0, 255, 255, 255),
+      // Background color of the slider drawer
+      color: Colors.white60,
       width: double.infinity,
       child: Column( // This Column is the main layout container
         children: [
           Container( // Header
-            color: const Color.fromARGB(255, 33, 29, 159),
+            color: Colors.blue[700],
             width: double.infinity,
             height: 56,
             padding: const EdgeInsets.all(10),
@@ -34,11 +37,13 @@ class ControlPanelAccordion extends StatelessWidget {
           Expanded(
             child: SingleChildScrollView( // Accordion (takes available space)
               child: Accordion(
-                headerBackgroundColor:  Colors.deepOrange,
-                headerBackgroundColorOpened:   Color.fromARGB(255, 255, 109, 4),
-                // headerBorderColor: Colors.green,
-                // headerBorderColorOpened: Colors.red,
-                contentBorderColor: Color.fromARGB(255, 255, 109, 4),
+                headerBackgroundColor:  Colors.blueGrey,
+                headerBackgroundColorOpened:   Colors.blueGrey,
+                // headerBackgroundColor:  Colors.deepOrange,
+                // headerBackgroundColorOpened:   Color.fromARGB(255, 255, 109, 4),
+                // headerBorderColor: Colors.blueGrey,
+                // headerBorderColorOpened: Colors.blueGrey,
+                contentBorderColor: Colors.transparent,
                 headerBorderWidth: 10,
                 contentBorderWidth: 4,
                 scaleWhenAnimating: true,
@@ -47,26 +52,37 @@ class ControlPanelAccordion extends StatelessWidget {
                 paddingListHorizontal: 0,
                 paddingBetweenClosedSections: 0,
                 paddingBetweenOpenSections: 0,
-                headerBorderRadius: 0,
-                contentBorderRadius: 0,
+                headerBorderRadius: 10,
+                contentBorderRadius: 10,
                 children: [
                   AccordionSection(
-                    isOpen: true,
+                    leftIcon: const Icon(Icons.settings_applications_sharp, color: Colors.white),
+                    header: Center(child: const Text('Connection Settings', style: headerStyle)),
+                    content: const WSDropdown(),
+                  ),
+
+                  AccordionSection(
+                    // isOpen: true,
                     contentVerticalPadding: 0,
                     headerPadding: const EdgeInsets.symmetric(horizontal: 0),
-                    leftIcon: const Icon(Icons.text_fields_rounded, color: Colors.white),
-                    header: const Text('DAQ Setup', style: headerStyle),
+                    leftIcon: const Icon(Icons.electrical_services, color: Colors.white),
+                    header: Center(child: const Text('DAQ Config', style: headerStyle)),
                     // content: Text('Content 1', style: contentStyle),
                     content: const DaqDropdown(),
                   ),
+
                   AccordionSection(
-                    header: const Text('Header 2', style: headerStyle),
-                    content: Text('Content 2', style: contentStyle),
+                    leftIcon: const Icon(Icons.insert_chart_outlined_outlined, color: Colors.white),
+                    header: Center( child: const Text('Rig Config', style: headerStyle)),
+                    content: const RigDropdown(),
                   ),
+
                   AccordionSection(
-                    header: const Text('Header 3', style: headerStyle),
+                    leftIcon: const Icon(Icons.receipt_long_rounded, color: Colors.white),
+                    header: Center(child: const Text('Logging Config', style: headerStyle)),
                     content: Text('Content 3', style: contentStyle),
                   ),
+
                 ],
               ),
             ),

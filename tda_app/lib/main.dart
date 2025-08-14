@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_size/window_size.dart';
 import 'app_state.dart';
 import 'main_screen.dart';
 // import 'package:get/get.dart';
@@ -12,6 +13,10 @@ import 'main_screen.dart';
 // }
 
 void main(){
+  setWindowTitle('Tractor Data Analyzer');
+  setWindowMinSize(const Size(800, 600));
+  setWindowMaxSize(Size.infinite);
+  setWindowFrame(const Rect.fromLTWH(0, 0, 1920, 1030));
   runApp(
     ChangeNotifierProvider(
       create: (_){
