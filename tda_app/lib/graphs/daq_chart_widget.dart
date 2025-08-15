@@ -116,24 +116,21 @@ class _DaqChartWidgetState<T> extends State<DaqChartWidget<T>> {
   }
 
 void _updateData(Timer timer) {
-  // If the widget has been disposed, Stop doing work.
   if (!mounted) {
     timer.cancel();
     return;
   }
-
   if (!usingGenerator) return;
+
   final newData = widget.dataGenerator!();
 
-  // Update internal snapshot
-  setState(() {
-    _chartDataSnapshot.add(newData);
-    if (_chartDataSnapshot.length > widget.maxDataPoints) {
-      _chartDataSnapshot.removeAt(0);
-    }
-  });
+  // Mutate the same list instance used by the series (no setState here)
+  _chartDataSnapshot.add(newData);
+  if (_chartDataSnapshot.length > widget.maxDataPoints) {
+    _chartDataSnapshot.removeAt(0);
+  }
 
-  // Update series controllers safely
+  // Tell the chart which index changed (safe, efficient)
   for (int i = 0; i < _seriesControllers.length; i++) {
     final ctrl = _seriesControllers[i];
     if (ctrl == null) continue;
@@ -144,16 +141,14 @@ void _updateData(Timer timer) {
             _chartDataSnapshot.length > widget.maxDataPoints ? <int>[0] : null,
       );
     } catch (err, st) {
-      // Defensive: swallow errors that happen because the chart was disposed
-      // during a hot reload/navigation. Optionally log in debug mode:
       assert(() {
-        // ignore: avoid_print
-        print('Warning: controller update failed (probably disposed): $err\n$st');
+        print('Chart update failed (probably disposed): $err\n$st');
         return true;
       }());
     }
   }
 }
+
 
 
 @override

@@ -166,7 +166,7 @@ class AppState extends ChangeNotifier {
   /// Disconnect manually
   void disconnectWebSocket() {
     if (wsConnected) {
-      sendCommand({'command': 'WSdisconnect'});
+      sendCommand({"type": "command", "params": {"action": "WSdisconnect"}});
     }
     _channelSubscription?.cancel();
     _channel?.sink.close(status.normalClosure);
