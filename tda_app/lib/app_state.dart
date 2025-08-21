@@ -100,10 +100,16 @@ class AppState extends ChangeNotifier {
   bool isRIGScanning = false;
   bool autoRIGScanEnabled = true;
 
+  String fileName = 'Field_Job';
+  bool isLogging = false;
+  bool isCreatingLog = false;
+  bool isNotLogging = false;
+
+
   String? setEthernetIp = '192.168.4.140';
   int? setEthernetPort = 2000;
 
-  String? setNIModule = 'cDAQ9181-2185DAEMod1/ai0';
+  String? NIModule = '';
   int? setNIModuleSPS = 30;
 
   String? setSerialPort;
@@ -230,34 +236,97 @@ class AppState extends ChangeNotifier {
   void _handleMessage(dynamic data) {
     if (data['source'] == 'DAQ' && data['type'] == 'data') {
       final params = data['params'];
-      if (params != null) {
+      if (params == null) return;
 
-        // Handle timestamp
-        final double? ts = params['timestamp']?.toDouble();
-        if (ts == null) return;
-        final timestamp = DateTime.fromMillisecondsSinceEpoch((ts * 1000).toInt(),);
+      // Handle timestamp
+      List<DateTime> timestamps = [];
 
+      final ts = params['timestamp'];
+      if (ts is List) {
+        timestamps = ts.map((t) => DateTime.fromMillisecondsSinceEpoch((t * 1000).toInt())).toList();
+      }
+      else if (ts is num) {
+        timestamps.add(DateTime.fromMillisecondsSinceEpoch((ts * 1000).toInt()));
+      }
+      else{
+        return;
+      }
 
-        // Handle pressures together only if rawPressure is available
-        if (params['raw_pressure'] != null) {
-          final rawPressure = (params['raw_pressure'] as num).toDouble();
-          final filteredPressure = (params['filtered_pressure'] as num?)?.toDouble() ?? -1;
+      // Normalize raw_pressure to match timestamps length
+      List<double>? rawPressure = [];
+      if (params['raw_pressure'] != null) {
+        final rp = params['raw_pressure'];
+        if (rp is List) {
+          rawPressure = rp.map((v) => v.toDouble()).cast<double>().toList();
+        } else if (rp is num) {
+          rawPressure = List<double>.filled(timestamps.length, rp.toDouble());
+        }
+      }
 
+      // Normalize filtered_pressure to match timestamps length
+      List<double>? filteredPressure = [];
+      final fp = params['filtered_pressure'];
+      if (fp != null) {
+        if (fp is List) {
+          filteredPressure = fp.map((v) => v.toDouble()).cast<double>().toList();
+        } else if (fp is num) {
+          filteredPressure = List<double>.filled(timestamps.length, fp.toDouble());
+        }
+      } else {
+        filteredPressure = List<double>.filled(timestamps.length, -1);
+      }
+
+      // // OLD CODE
+      // // Handle timestamp
+      // final double? ts = params['timestamp']?.toDouble();
+      // if (ts == null) return;
+      // final timestamp = DateTime.fromMillisecondsSinceEpoch((ts * 1000).toInt(),);
+
+      // // Handle pressures together only if rawPressure is available
+      // if (params['raw_pressure'] != null) {
+      //   final rawPressure = (params['raw_pressure'] as num).toDouble();
+      //   final filteredPressure = (params['filtered_pressure'] as num?)?.toDouble() ?? -1;
+
+      //   final pressurePoint = TractorPressure(
+      //     timestamp: timestamp,
+      //     rawPressure: rawPressure,
+      //     filteredPressure: filteredPressure,
+      //   );
+      //   _addTractorPressure(pressurePoint);
+      // }
+      // // --------------------------------------
+
+      // Handle pressures separately
+      if (rawPressure != null && filteredPressure != null) {
+        for (int i = 0; i < timestamps.length; i++) {
           final pressurePoint = TractorPressure(
-            timestamp: timestamp,
-            rawPressure: rawPressure,
-            filteredPressure: filteredPressure,
+            timestamp: timestamps[i],
+            rawPressure: rawPressure[i],
+            filteredPressure: filteredPressure[i],
           );
           _addTractorPressure(pressurePoint);
         }
-
-        // Handle tractor speed independently if present
-        if (params['tractor_speed'] != null) {
-          final speed = (params['tractor_speed'] as num?)?.toDouble() ?? -1;
-          final speedPoint = TractorSpeed(timestamp: timestamp, tractorSpeed: speed);
-          _addTractorSpeed(speedPoint);
-        }
       }
+
+      // Handle tractor speed independently if present
+      if (params['tractor_speed'] != null) {
+        final speed = (params['tractor_speed'] as num?)?.toDouble() ?? -1;
+        final speedPoint = TractorSpeed(timestamp: timestamps[0], tractorSpeed: speed);
+        _addTractorSpeed(speedPoint);
+      }
+    }
+    else if (data['source'] == 'DAQ' && data['type'] == 'config') {
+      final niDevice = data['params'];
+      if (niDevice == null) return;
+      setSelectedNIModuleChannel(niDevice);
+    }
+    else if(data['type'] == 'acknowledgement'){
+      data['state'] == 'LoggingStarted' ? isLogging = true : null;
+      // print(isLogging);
+      // print(isNotLogging);
+      // print(isCreatingLog);
+      
+
     }
     else if (data['source'] == 'RIG' && data['type'] == 'data') {
       final params = data['params'];
@@ -402,12 +471,14 @@ class AppState extends ChangeNotifier {
 
   void startDAQ() {
     sendCommand({"type": "command", "params": {"action": "DAQstart"}});
+    // sendCommand({"cmd" : "start_daq"});
     isDAQRunning = true;
     notifyListeners();
   }
 
   void stopDAQ() {
     sendCommand({"type": "command", "params": {"action": "DAQstop"}});
+    // sendCommand({"cmd" : "stop_daq"});
     isDAQRunning = false;
     notifyListeners();
   }
@@ -430,8 +501,8 @@ class AppState extends ChangeNotifier {
   }
 
   void setSelectedNIModuleChannel(String channel) {
-    setNIModule = channel;
-    sendCommand({'command': 'setNIModule', 'channel': channel});
+    NIModule = channel;
+    sendCommand({'type': 'config', 'NIModule': channel});
     notifyListeners();
   }
 
@@ -456,5 +527,29 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  int? setSerialFPS; // for serial frame rate
+  void setLogName(String name) {
+    fileName = name;
+    // Send command not needed since it sends commands through the startLogging function
+    // sendCommand({"config": "Logging", "filename": fileName});
+    notifyListeners();
+  }
+
+  void startLogging() {
+    if (isLogging || isCreatingLog || !wsConnected) return;
+    
+    isCreatingLog = true;
+    isNotLogging = false;
+    sendCommand({'type': 'command', 'params': {'action': 'startLogging', "filename": fileName}});
+    notifyListeners();    
+  }
+
+  void stopLogging() {
+    isLogging = false;
+    isCreatingLog = false;
+    sendCommand({'command': 'stopLogging'});
+    notifyListeners();
+  }
+
+  int? setSerialFPS;
+  
 }

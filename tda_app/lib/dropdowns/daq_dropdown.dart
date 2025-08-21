@@ -34,7 +34,7 @@ class DaqDropdown extends StatelessWidget {
             if (appState.daqMode == "Ethernet") ...[
               DropdownMenu<String>(
                 width: 290,
-                initialSelection: appState.setNIModule,
+                initialSelection: appState.NIModule,
                 hintText: 'Select Channel Address',
                 onSelected: (value) {
                   if (value != null) appState.setSelectedNIModuleChannel(value);

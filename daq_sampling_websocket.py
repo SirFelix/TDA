@@ -1,32 +1,36 @@
-### daq_sampling_websocket.py
-# This is to replace the serial_output_web_socket.py program. It's update is limited
-# and this program is made to fix that.
+#!/usr/bin/env python3
+"""
+daq_sampling_websocket.py
 
-import asyncio, json, time, datetime
-from typing import Any, Callable, Dict, Optional, Iterable, Tuple, List
+Simplified event-driven DAQ sampling + one-shot WebSocket broadcaster.
+
+This version includes:
+- One-shot broadcast of DAQ device name and sample rate on WS connection.
+- DAQ `period_points` variable tied to filtered pressure.
+"""
+
+import asyncio
+import json
+import time
+import inspect
+from typing import Any, Dict, Optional, Iterable, Tuple
+
 import nidaqmx
+import nidaqmx.system
 from nidaqmx.constants import CurrentUnits, CurrentShuntResistorLocation, AcquisitionType, READ_ALL_AVAILABLE
 import websockets
 import websockets.exceptions
-import inspect # Used to get the line number
 
-## Not used
-# import signal
-# import numpy as np
-
-
-#--------------- Configuration ----------------
+# ---------- Configuration ----------
 PHYSICAL_CHAN = "cDAQ9181-2185DAEMod1/ai0"
-DAQ_SAMPLE_RATE = 4  #Hz
-TX_RATE = 4        #Hz
-port_number = 9813
+DAQ_SAMPLE_RATE = 30  # Hz
+TX_RATE = 10          # not used by one-shot but kept
+PORT_NUMBER = 9813
 
 clients = set()
-
-# Verbose output flag for debugging
 VERBOSE = True
 
-# ----------- Logging Colors -----------
+# ---------- Logging helper ----------
 COLOR_RESET = "\033[0m"
 COLOR_GREEN = "\033[92m"
 COLOR_YELLOW = "\033[93m"
@@ -36,76 +40,9 @@ COLOR_BLUE = "\033[94m"
 COLOR_ORANGE = "\033[38;5;172m"
 COLOR_GRAY = "\033[90m"
 
-shared_data = {
-    "daq_timestamp": None,
-    "daq_rawCurrent": None,
-    "daq_rawPressure": None,
-    "daq_filteredPressure": None,
-    "daq_tractorSpeed": None,
-    "daq_channel": PHYSICAL_CHAN,
-    "daq_port": port_number,
-    "sample_rate": DAQ_SAMPLE_RATE,
-    "tx_rate": TX_RATE
-}
-
-
-varSpec = Dict[str, Any]
-SourceSpec = Dict[str, Any]
-
-REGISTRY: Dict[str, SourceSpec] = {
-    "DAQ": {
-        "timestamp": "daq_timestamp",
-        "vars": {
-            "raw_pressure":         {"key": "daq_rawPressure",      "transform": float, "default": None},
-            "filtered_pressure":    {"key": "daq_filteredPressure", "transform": float, "default": None},
-            "tractor_speed":        {"key": "daq_tractorSpeed",     "transform": float, "default": None},
-        },
-    },
-    "RIG": {
-        "timestamp": "rig_timestamp",
-        "vars": {
-            "ctPressure":   {"key": "rig_ctPressure",   "transform": float, "default": None},
-            "whPressure":   {"key": "rig_whPressure",   "transform": float, "default": None},
-            "ctDepth":      {"key": "rig_ctDepth",      "transform": float, "default": None},
-            "ctWeight":     {"key": "rig_ctWeight",     "transform": float, "default": None},
-            "ctSpeed":      {"key": "rig_ctSpeed",      "transform": float, "default": None},
-            "ctFluidRate":  {"key": "rig_ctFluidRate",  "transform": float, "default": None},
-            "n2FluidRate":  {"key": "rig_n2FluidRate",  "transform": float, "default": None},
-        },
-    },
-}
-
-class DAQSession:
-    def __init__(self):
-        self.sample_rate = DAQ_SAMPLE_RATE
-        self.tx_rate = TX_RATE
-        self.terminate = False
-        self.active = False
-
-    def stop(self):
-        self.active = False
-
-    def start(self):
-        self.active = True
-
-    def terminate(self):
-        self.terminate = True
-
-    def update_sample_rate(self, rate):
-        self.sample_rate = rate
-
-    def update_tx_rate(self, rate):
-        self.tx_rate = rate
-
-
-
-
-def log(message, level="info"):
-
+def log(message: str, level: str = "info") -> None:
     if not VERBOSE:
         return
-    
-    # ts = datetime.datetime.now().strftime("%H:%M:%S")
     frame = inspect.currentframe().f_back
     color = {
         "info": COLOR_CYAN,
@@ -116,222 +53,242 @@ def log(message, level="info"):
         "header": COLOR_BLUE,
         "data": COLOR_ORANGE,
     }.get(level, COLOR_RESET)
-
     print(f"{color}[DSW #{frame.f_lineno}] {message}{COLOR_RESET}")
 
-def map_range(x, in_min, in_max, out_min, out_max):
+# ---------- Range mapping / conversion ----------
+def map_range(x: float, in_min: float, in_max: float, out_min: float, out_max: float) -> float:
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
 raw_to_psi = lambda x: map_range(x, 0.004, 0.020, 0, 15000)
 
+# ---------- Simple central DB ----------
+_db: Dict[str, Dict[str, Any]] = {
+    "DAQ": {"channel": PHYSICAL_CHAN, "port": PORT_NUMBER, "sample_rate": DAQ_SAMPLE_RATE, "tx_rate": TX_RATE},
+    "RIG": {},
+}
+_db_lock = asyncio.Lock()
 
+async def db_set(source: str, key: str, value: Any) -> None:
+    async with _db_lock:
+        src = _db.setdefault(source, {})
+        src[key] = value
 
+async def db_set_many(source: str, mapping: Dict[str, Any]) -> None:
+    async with _db_lock:
+        src = _db.setdefault(source, {})
+        src.update(mapping)
 
+def db_get(source: str, key: str, default: Any = None) -> Any:
+    return _db.get(source, {}).get(key, default)
 
-async def sample_daq(session: DAQSession, shared_data: dict): # Added async to turn sample_daq function into an async function
+def db_get_all(source: str) -> Dict[str, Any]:
+    return dict(_db.get(source, {}))
+
+# ---------- Registry mapping JSON names -> DB keys/transforms ----------
+REGISTRY: Dict[str, Dict[str, Any]] = {
+    "DAQ": {
+        "timestamp": "timestamp",
+        "vars": {
+            "raw_pressure":      {"key": "rawPressure",     "transform": float, "default": None},
+            "filtered_pressure": {"key": "filteredPressure","transform": float, "default": -1.0},
+            "tractor_speed":     {"key": "tractorSpeed",    "transform": float, "default": None},
+            "period_points":     {"key": "periodPoints",    "transform": float, "default": None},
+            "device_name":       {"key": "device_name",     "transform": str,   "default": None},
+            "sample_rate":       {"key": "sample_rate",     "transform": float, "default": DAQ_SAMPLE_RATE},
+        },
+    },
+    "RIG": {
+        "timestamp": "timestamp",
+        "vars": {
+            "ctPressure":   {"key": "ctPressure",    "transform": float, "default": None},
+            "whPressure":   {"key": "whPressure",    "transform": float, "default": None},
+            "ctDepth":      {"key": "ctDepth",       "transform": float, "default": None},
+            "ctWeight":     {"key": "ctWeight",      "transform": float, "default": None},
+            "ctSpeed":      {"key": "ctSpeed",       "transform": float, "default": None},
+            "ctFluidRate":  {"key": "ctFluidRate",   "transform": float, "default": None},
+            "n2FluidRate":  {"key": "n2FluidRate",   "transform": float, "default": None},
+        },
+    },
+}
+
+_last_sent_ts: Dict[Tuple[str, str], Any] = {}
+
+def get_device_name():
+    system = nidaqmx.system.System.local()
+
+    if not system.devices:
+        raise RuntimeError("No NI devices found.")
+
+    for device in system.devices:
+        # If this is a module (not a chassis). 
+        # DAQ field boxes only use modules
+        if not device.product_type.startswith("cDAQ"):
+            return f"{device.name}/ai0"
+
+        # If it's a chassis, try to get its first module
+        try:
+            if device.modules:
+                return f"{device.modules[0].name}/ai0"
+        except AttributeError:
+            pass
+
+    raise RuntimeError("No module with channels found.")
+
+# ---------- WebSocket send helper ----------
+async def send_with_timeout(client, message: str, timeout: float = 1.0):
+    try:
+        await asyncio.wait_for(client.send(message), timeout=timeout)
+    except asyncio.TimeoutError:
+        log(f"[ TX ] Timeout sending to client {getattr(client, 'remote_address', client)}", "error")
+        clients.discard(client)
+    except websockets.exceptions.ConnectionClosed:
+        log(f"[ TX ] Client {getattr(client, 'remote_address', client)} disconnected.", "error")
+        clients.discard(client)
+    except Exception as e:
+        log(f"[ TX ] Error sending to client {getattr(client, 'remote_address', client)}: {e}", "error")
+        clients.discard(client)
+
+# ---------- One-shot broadcaster ----------
+async def broadcast_data_one_shot(*, source: str, params: Iterable[str], msg_type: str = "data", per_call_defaults: Optional[Dict[str, Any]] = None, force: bool = False) -> None:
+    
+    spec = REGISTRY.get(source)
+    if not spec:
+        log(f"[ TX ] Unknown source '{source}'", "warn")
+        return
+
+    ts_key = spec["timestamp"]
+    ts_val = db_get(source, ts_key)
+    if ts_val is None:
+        ts_val = time.time()
+
+    if not force and _last_sent_ts.get((source, msg_type)) == ts_val:
+        return
+
+    params_map: Dict[str, Any] = {"timestamp": float(ts_val)}
+    for name in params:
+        var_spec = spec["vars"].get(name)
+        if not var_spec:
+            continue
+        db_key = var_spec["key"]
+        transform = var_spec.get("transform")
+        default = (per_call_defaults or {}).get(name, var_spec.get("default"))
+        raw_value = db_get(source, db_key, None)
+        if raw_value is None:
+            if default is not None:
+                params_map[name] = default
+            continue
+        try:
+            params_map[name] = transform(raw_value) if transform else raw_value
+        except Exception:
+            if default is not None:
+                params_map[name] = default
+
+    payload = {"source": source, "type": msg_type, "params": params_map}
+    message = json.dumps(payload, separators=(",", ":"))
+
+    send_tasks = [asyncio.create_task(send_with_timeout(c, message)) for c in list(clients)]
+    if send_tasks:
+        await asyncio.gather(*send_tasks)
+
+    _last_sent_ts[(source, msg_type)] = ts_val
+    log(f"[ TX ] {message}", "data")
+
+# ---------- DAQ session helper ----------
+class DAQSession:
+    def __init__(self):
+        self.sample_rate = DAQ_SAMPLE_RATE
+        self.tx_rate = TX_RATE
+        self.terminate = False
+        self.active = False
+    def stop(self): self.active = False
+    def start(self): self.active = True
+    def terminate_session(self): self.terminate = True
+    def update_sample_rate(self, rate): self.sample_rate = rate
+    def update_tx_rate(self, rate): self.tx_rate = rate
+
+# ---------- DAQ sampling ----------
+async def sample_daq(session: DAQSession):
     log(f"[ DAQ ] DAQ started.", "success")
-    while not session.terminate: # Check if the DAQ session was terminated
-        if session.active:       # Check if the DAQ session is active (DAQstart was called)
-            with nidaqmx.Task() as task:
 
-                #Channel configuration of DAQ
+    # Store device name and initial sample rate once
+    device_name = get_device_name()
+    await db_set("DAQ", "device_name", device_name)
+    await db_set("DAQ", "sample_rate", session.sample_rate)
+    await broadcast_data_one_shot(source="DAQ", params=["device_name", "sample_rate"], force=True)
+
+    while not session.terminate:
+        if not session.active:
+            await asyncio.sleep(0.1)
+            continue
+
+        try:
+            with nidaqmx.Task() as task:
                 task.ai_channels.add_ai_current_chan(
                     physical_channel=PHYSICAL_CHAN,
                     min_val=0.004, max_val=0.020,
                     units=CurrentUnits.AMPS,
                     shunt_resistor_loc=CurrentShuntResistorLocation.INTERNAL
                 )
-
-                
-                #Sampling configuration
                 task.timing.cfg_samp_clk_timing(
                     rate=session.sample_rate,
                     sample_mode=AcquisitionType.CONTINUOUS,
                     samps_per_chan=1
                 )
+                task.start()
+                log(f"Sampling at {session.sample_rate} Hz.", "success")
 
+                while session.active:
+                    value = task.read(number_of_samples_per_channel=READ_ALL_AVAILABLE)
+                    timestamp = round(time.time(), 6)
+                    sample = value[-1] if isinstance(value, (list, tuple)) else value
 
-                log(f"Sampling at {session.sample_rate} Hz. Press Ctrl+C to stop.", "success")
+                    raw_current = float(sample)
+                    raw_pressure = raw_to_psi(raw_current)
 
-                task.start() # Start the DAQ task explicity Before first read (required when using READ_ALL_AVAILABLE)
+                    # Example: filtered pressure and period_points calculation
+                    filtered_pressure = raw_pressure  # replace with actual filter logic
+                    period_points = filtered_pressure / 1000  # placeholder example logic
 
-                # session.start()
+                    await db_set_many("DAQ", {
+                        "rawCurrent": raw_current,
+                        "rawPressure": raw_pressure,
+                        "filteredPressure": filtered_pressure,
+                        "periodPoints": period_points,
+                        "timestamp": timestamp,
+                    })
 
-                try:
-                    while session.active:
-                        # # Takes all the samples stored in value and retrieves only the latest sample to log
-                        # # Note: that this tops out at ~64Hz before the DAQ buffer starts growing
-                        # # Alternative: value = task.read(number_of_samples_per_channel=READ_ALL_AVAILABLE)[-1]
-                        value = task.read(number_of_samples_per_channel=READ_ALL_AVAILABLE) # This grabs everything currently in the buffer and optionally discards the rest. Stops buffer overflow condition
-                        timestamp = round(time.time(), 6)
-
-                        if value:   # Checks if the buffer is empty
-                            for i, sample in enumerate(value):
-                                continue
-                                log(f"{timestamp + i / session.sample_rate:.3f}: {sample:.9f} A", "data")
-
-                            if len(value) > 1:
-
-                                  # For sending multiple samples at once
-                                  #-----------------------------------------
-                                # # Back calculates even time intervals of the samples in the buffer
-                                # base_time = timestamp - (len(value) - 1) / session.sample_rate
-                                # timestamps = [base_time + i / session.sample_rate for i in range(len(value))]
-
-                                # log(f"{len(value)} samples in buffer. making an array of samples.", "warn")
-                                # shared_data["daq_rawCurrent"] = value
-                                # shared_data["daq_timestamp"] = timestamps
-                                  #-----------------------------------------
-
-
-                                # For sending only the latest sample
-                                shared_data["daq_rawCurrent"] = value[-1]
-                                shared_data["daq_rawPressure"] = raw_to_psi(value[-1])
-                            else:
-                                # log("One sample in buffer.", "info")
-                                shared_data["daq_rawCurrent"] = value
-                                shared_data["daq_rawPressure"] = raw_to_psi(value[-1])
-
-                                # log(f"{timestamp}: {shared_data['daq_rawPressure']:.2f} PSI", "data")
-                            
-                            shared_data["daq_timestamp"] = timestamp
-                        else:
-                            continue
-                            
-
-                        await asyncio.sleep(1.0 / (session.sample_rate * 1.1)) # Not needed the sample rate is defined
-
-                except asyncio.CancelledError:
-                    log("[CancelledError] Sampling task was cancelled.", "info")
-                except KeyboardInterrupt:
-                    log("\n[KeyboardInterrupt] Sampling stopped.", "info")
-                finally:
-                    session.stop()
-
-        # Checks if the session is active every 0.1 seconds
-        else:
-            # log(f"[ DS ] Sampling task is inactive.", "info")
-            await asyncio.sleep(0.1)
-    log(f"[ DS ] Sampling task was terminated.", "info")
-    await asyncio.sleep(0.1)
-
-
-
-### OLD CODE Broadcast DAQ data to clients indiscriminately and independently of the sampling task
-# async def broadcast_data(session: DAQSession, shared_data):
-#     last_sent_timestamp = None
-#     try:
-#         while True:
-#             current_timestamp = shared_data["daq_timestamp"]
-#             if shared_data["daq_rawCurrent"] is not None and current_timestamp != last_sent_timestamp:
-
-#                 payload = {
-#                     "source": "DAQ",
-#                     "type": "data",
-#                     "params": {
-#                         # "timestamp": shared_data["daq_timestamp"][-1] if shared_data["daq_timestamp"] else None,
-#                         "timestamp": shared_data["daq_timestamp"] if shared_data["daq_timestamp"] else None,
-#                         "raw_pressure": shared_data["daq_rawPressure"] if shared_data["daq_rawPressure"] else None,
-#                         "filtered_pressure": 4,
-#                         "tractor_speed": 15.2,
-#                     }
-#                 }
-
-#                 message = json.dumps(payload)
-#                 log(f"[ TX ] {message}", "data")
-
-#                 # Build a list of tasks
-#                 send_tasks = []
-#                 for client in list(clients):
-#                     send_tasks.append(
-#                         asyncio.create_task(send_with_timeout(client, message))
-#                     )
-
-#                 await asyncio.gather(*send_tasks)
-#                 # log(f"[ TX ] Client removed. {len(clients)} clients remain.", "warn")
-
-
-#                 # log(f"[ TX ] Sent {len(shared_data['daq_rawCurrent'])} samples.", "success")
-#                 last_sent_timestamp = current_timestamp
-
-#             await asyncio.sleep(1.0 / (shared_data["tx_rate"] * 1.15))
-
-#     except Exception as e:
-#         log(f"[ TX ] Exception: {e}", "error")
-
-
-#### NEW CODE Receives input from multiple sources and sends data to clients
-async def broadcast_data(session: DAQSession, shared_data):
-    last_sent_timestamp = None
-    try:
-        while True:
-            current_timestamp = shared_data["daq_timestamp"]
-            if shared_data["daq_rawCurrent"] is not None and current_timestamp != last_sent_timestamp:
-
-                payload = {
-                    "source": "DAQ",
-                    "type": "data",
-                    "params": {
-                        # "timestamp": shared_data["daq_timestamp"][-1] if shared_data["daq_timestamp"] else None,
-                        "timestamp": shared_data["daq_timestamp"] if shared_data["daq_timestamp"] else None,
-                        "raw_pressure": shared_data["daq_rawPressure"] if shared_data["daq_rawPressure"] else None,
-                        "filtered_pressure": 4,
-                        "tractor_speed": 15.2,
-                    }
-                }
-
-                message = json.dumps(payload)
-                # log(f"[ TX ] {message}", "data")
-
-                # Build a list of tasks
-                send_tasks = []
-                for client in list(clients):
-                    send_tasks.append(
-                        asyncio.create_task(send_with_timeout(client, message))
+                    await broadcast_data_one_shot(
+                        source="DAQ",
+                        params=["raw_pressure", "filtered_pressure", "tractor_speed", "period_points"]
                     )
 
-                await asyncio.gather(*send_tasks)
-                # log(f"[ TX ] Client removed. {len(clients)} clients remain.", "warn")
+                    await asyncio.sleep(1.0 / (session.sample_rate * 1.05))
 
+        except asyncio.CancelledError:
+            log("[CancelledError] Sampling task cancelled.", "info")
+            break
+        except Exception as e:
+            log(f"[ DAQ ] Sampling loop exception: {e}", "error")
+            await asyncio.sleep(0.5)
 
-                # log(f"[ TX ] Sent {len(shared_data['daq_rawCurrent'])} samples.", "success")
-                last_sent_timestamp = current_timestamp
+    log(f"[ DAQ ] Sampling task terminated.", "info")
 
-            await asyncio.sleep(1.0 / (shared_data["tx_rate"] * 1.15))
-
-    except Exception as e:
-        log(f"[ TX ] Exception: {e}", "error")
-
-
-# --- Helper function to protect each send call ---
-async def send_with_timeout(client, message, timeout=1.0):
-    try:
-        await asyncio.wait_for(client.send(message), timeout=timeout)
-    except asyncio.TimeoutError:
-        log(f"[ TX ] Timeout sending to client {client.remote_address}", "error")
-        clients.discard(client)
-    except websockets.exceptions.ConnectionClosed:
-        log(f"[ TX ] Client {client.remote_address} disconnected.", "error")
-        clients.discard(client)
-    except Exception as e:
-        log(f"[ TX ] Error sending to client {client.remote_address}: {e}", "error")
-        clients.discard(client)
-
-
-
-
-
-async def ws_handler(websocket, session: DAQSession, shared_data: dict):
+# ---------- WebSocket handler ----------
+async def ws_handler(websocket, path, session: DAQSession):
     clients.add(websocket)
-    log(f"[ WS ] {len(clients)} clients connected. Connected to {websocket.remote_address}", "header")
-    await websocket.send( json.dumps({"type": "acknowledgement","state": "NewConnection",}))
-    session.terminate = False
+    log(f"[ WS ] {len(clients)} clients connected.", "header")
+    try:
+        await websocket.send(json.dumps({"type": "acknowledgement", "state": "NewConnection"}))
+    except Exception:
+        pass
 
     try:
         async for message in websocket:
-            log(f"[ WS ] Received: {message}", "data")
-            data = json.loads(message)
-            
+            try:
+                data = json.loads(message)
+            except Exception:
+                continue
+
             if data.get("type") == "command":
                 params = data.get("params", {})
                 action = params.get("action")
@@ -341,72 +298,56 @@ async def ws_handler(websocket, session: DAQSession, shared_data: dict):
                 if action == "DAQstop":
                     session.stop()
                     log("[ Command ] DAQ stopped.", "success")
-                    await websocket.send( json.dumps({"type": "acknowledgement","state": "DAQstopped",}))
-
+                    await websocket.send(json.dumps({"type": "acknowledgement", "state": "DAQstopped"}))
                 elif action == "DAQstart":
                     session.start()
                     log("[ Command ] DAQ started.", "success")
-                    await websocket.send( json.dumps({"type": "acknowledgement","state": "DAQstarted",}))
-                
-                elif action == "WSdisconnect":
+                    await websocket.send(json.dumps({"type": "acknowledgement", "state": "DAQstarted"}))
+                elif action == "DAQdisconnect":
                     session.stop()
                     session.terminate = True
-                    log("[ Command ] WS disconnected.", "success")
-                    await websocket.send( json.dumps({"type": "acknowledgement","state": "WSterminated",}))
-
+                    log("[ Command ] DAQ disconnected.", "success")
+                    await websocket.send(json.dumps({"type": "acknowledgement", "state": "DAQterminated"}))
                 elif action == "DAQconnect":
-                    # session.start()
                     session.terminate = False
                     log("[ Command ] DAQ reconnected.", "success")
-                    await websocket.send( json.dumps({"type": "acknowledgement","state": "DAQreconnected",}))
+                    await websocket.send(json.dumps({"type": "acknowledgement", "state": "DAQreconnected"}))
 
                 if sample_rate:
-                    session.update_sample_rate(sample_rate)
-                    shared_data["sample_rate"] = sample_rate
-
+                    session.update_sample_rate(float(sample_rate))
+                    await db_set("DAQ", "sample_rate", float(sample_rate))
+                    await websocket.send(json.dumps({"type": "acknowledgement", "state": f"sample_rate_set:{sample_rate}"}))
                 if tx_rate:
-                    session.update_tx_rate(tx_rate)
-                    shared_data["tx_rate"] = tx_rate
-    
+                    session.update_tx_rate(float(tx_rate))
+                    await db_set("DAQ", "tx_rate", float(tx_rate))
+                    await websocket.send(json.dumps({"type": "acknowledgement", "state": f"tx_rate_set:{tx_rate}"}))
+
     except websockets.exceptions.ConnectionClosed:
-        log("Client disconnected.", "error")
+        log("[ WS ] Client disconnected.", "warn")
     finally:
-        clients.remove(websocket)
+        clients.discard(websocket)
+        log(f"[ WS ] client removed. {len(clients)} clients remain.", "debug")
 
-
-
-#Need to add this function for the asynchronous sleep call
+# ---------- Main ----------
 async def main():
     session = DAQSession()
-    # await sample_daq(session)
 
-    shared_data = {
-        "daq_rawCurrent": None,
-        "daq_timestamp": None,
-        "tx_rate": session.tx_rate
-    }
+    async def handler(ws, path):
+        await ws_handler(ws, path, session)
 
-    ws_server = await websockets.serve(
-        lambda ws,
-        path: ws_handler(ws, session, shared_data),
-        "localhost",
-        port_number
-    )      #start the websocket server
+    ws_server = await websockets.serve(handler, "0.0.0.0", PORT_NUMBER)
+    log(f"[ WS ] Websocket server started on port {PORT_NUMBER}", "success")
 
-    log(f"[ WS ] Websocket server started on port {port_number}", "success")
-    await asyncio.gather(
-
-        sample_daq(session, shared_data),       #run DAQ reading function
-        broadcast_data(session, shared_data),            #send data to clients
-    )
-    
-#----------
-
-
-
+    try:
+        await asyncio.gather(
+            sample_daq(session),
+        )
+    finally:
+        ws_server.close()
+        await ws_server.wait_closed()
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main()) # Wrap the regular main() with asyncio.run() to create a co-routine 
+        asyncio.run(main())
     except KeyboardInterrupt:
         log("[Exit] KeyboardInterrupt received. Exiting cleanly.", "success")

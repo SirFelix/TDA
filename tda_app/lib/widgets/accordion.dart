@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:accordion/accordion.dart';
 import 'package:tda_app/dropdowns/daq_dropdown.dart';
+import 'package:tda_app/dropdowns/log_dropdown.dart';
 import 'package:tda_app/dropdowns/rig_dropdown.dart';
 import 'package:tda_app/dropdowns/ws_dropdown.dart';
 
@@ -80,7 +81,7 @@ class ControlPanelAccordion extends StatelessWidget {
                   AccordionSection(
                     leftIcon: const Icon(Icons.receipt_long_rounded, color: Colors.white),
                     header: Center(child: const Text('Logging Config', style: headerStyle)),
-                    content: Text('Content 3', style: contentStyle),
+                    content: const LogDropdown(),
                   ),
 
                 ],
@@ -88,17 +89,17 @@ class ControlPanelAccordion extends StatelessWidget {
             ),
           ),
 
-          // const Spacer(), // Spacer (fills remaining space)
-          Container( // Footer
-            padding: const EdgeInsets.all(10),
-            color: Colors.deepOrange,
-            width: double.infinity,
-            child: const Text(
-              'App Settings',
-              style: TextStyle(color: Color.fromARGB(230, 255, 255, 255), fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-          ),
+          // // const Spacer(), // Spacer (fills remaining space)
+          // Container( // Footer
+          //   padding: const EdgeInsets.all(10),
+          //   color: Colors.deepOrange,
+          //   width: double.infinity,
+          //   child: const Text(
+          //     'App Settings',
+          //     style: TextStyle(color: Color.fromARGB(230, 255, 255, 255), fontWeight: FontWeight.bold),
+          //     textAlign: TextAlign.center,
+          //   ),
+          // ),
         ],
       ),
     );
